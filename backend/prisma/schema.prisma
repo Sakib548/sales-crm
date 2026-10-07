@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+enum Role {
+  ADMIN
+  SALES_PERSON
+  INSTRUCTOR
+  STUDENT
+}
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(STUDENT) 
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+    // Reverse relation to leads
+  leads     Lead[]
+  activities Activity[] // One lead has many activity notes
+ tasks Task[] // One SALES_PERSON has a list of assigned tasks to complete
+  
+
+  
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  COUNSELING
+  APPLICATION_SENT
+  ENROLLED
+  LOST
+}
+
+model Lead {
+  id              Int        @id @default(autoincrement())
+  
+  // Student Contact Info
+  fullName        String
+  phone           String
+  email           String?
+  city            String?
+  company         String?    // Helpful for corporate CIPS sponsorship
+  
+  // Program of interest
+  courseInterest  String     // e.g., "CIPS Level 4 Diploma"
+  
+  // Sales Pipeline
+  status          LeadStatus @default(NEW)
+  lostReason      String?    // e.g., "Budget issue", "Unresponsive"
+  
+  // Assignment & Admin Controls
+  assignedToId    Int?       // Nullable until assigned to a counselor
+  assignedTo      User?      @relation(fields: [assignedToId], references: [id])
+  
+  // Lead Source & Meta API Deduplication
+  source          String     @default("Facebook Ads")
+  facebookLeadId  String?    @unique // Prevents duplicate leads from Meta webhook retries
+
+    // --- Linked to Course table ---
+  courseId        Int?     // Optional foreign key
+  course          Course?  @relation(fields: [courseId], references: [id])
+  
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+activities Activity[] 
+tasks Task[] // One student can have multiple follow-up tasks
+  @@map("leads")
+}
+
+enum ActivityType {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  STATUS_CHANGE // Useful when lead moves between stages
+}
+
+model Activity {
+  id        Int          @id @default(autoincrement())
+  type      ActivityType @default(NOTE)
+  content   String       @db.Text // @db.Text allows long paragraphs
+  
+  // Which student does this note belong to?
+  leadId    Int
+  lead      Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  // Which counselor wrote this note?
+  userId    Int
+  user      User         @relation(fields: [userId], references: [id])
+  
+  createdAt DateTime     @default(now())
+
+  @@map("activities")
+}
+
+model Task {
+  id           Int       @id @default(autoincrement())
+  title        String
+  dueDate      DateTime
+  isCompleted  Boolean   @default(false)
+  completedAt  DateTime? // Timestamp when marked complete
+  
+  // Which student is this task for?
+  leadId       Int
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  // Which counselor must do this task?
+  assignedToId Int
+  assignedTo   User      @relation(fields: [assignedToId], references: [id])
+  
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("tasks")
+}
+
+model Course {
+  id         Int      @id @default(autoincrement())
+  title      String   // e.g. "CIPS Level 4 Diploma in Procurement"
+  code       String   @unique // e.g. "CIPS-L4"
+  category   String   // e.g. "CIPS" or "Hospitality"
+  tuitionFee Decimal  @db.Decimal(10, 2) // e.g. 1850.00
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  // Relation: One course has many interested leads
+  leads      Lead[]
+
+  @@map("courses")
+}
